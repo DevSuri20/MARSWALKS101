@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MarsWalk — Mars Surface Data Explorer</title>
+
+    <!-- Leaflet CSS for 2D Panning Map -->
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./css/map.css" />
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.180.0/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.180.0/examples/jsm/"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <!-- SVG warm-tone grading for HiRISE and CTX map tiles -->
+    <svg width="0" height="0" style="position: absolute; pointer-events: none">
+      <defs>
+        <filter id="mars-warm-tone" color-interpolation-filters="sRGB">
+          <feColorMatrix
+            type="matrix"
+            values="0.36 0.36 0.36 0 -0.03
+                    0.36 0.36 0.36 0 -0.03
+                    0.36 0.36 0.36 0 -0.03
+                    0    0    0    1  0"
+          />
+          <feComponentTransfer>
+            <feFuncR
+              type="table"
+              tableValues="0.09 0.22 0.38 0.55 0.70 0.82 0.92"
+            />
+            <feFuncG
+              type="table"
+              tableValues="0.04 0.10 0.19 0.30 0.42 0.55 0.70"
+            />
+            <feFuncB
+              type="table"
+              tableValues="0.02 0.06 0.11 0.17 0.25 0.35 0.48"
+            />
+          </feComponentTransfer>
+        </filter>
+      </defs>
+    </svg>
+
+    <div class="app-shell">
+      <aside class="app-sidebar" id="main-sidebar" aria-label="Main navigation">
+        <a class="brand" href="./dashboard.html"><span class="brand-mark">M</span><span><strong>MarsWalk</strong><small>MISSION CONSOLE</small></span></a>
+        <div class="sidebar-caption">WORKSPACE</div>
+        <nav class="primary-nav" aria-label="Workspace sections">
+          <button class="nav-item is-active" type="button" data-view="explore" data-title="Explore Mars" data-copy="Browse the Martian surface, inspect map layers, and discover named locations." aria-current="page"><span class="nav-icon">⌖</span>Explore</button>
+          <button class="nav-item" type="button" data-view="route" data-title="Route Planning" data-copy="Choose a route mode, then select start and destination points on the map." aria-current="false"><span class="nav-icon">⌁</span>Route Planning</button>
+          <button class="nav-item" type="button" data-view="mission" data-title="Mission Planner" data-copy="Set rover and mission limits, compare route priorities, estimate resource budgets, and audit a custom traverse." aria-current="false"><span class="nav-icon">◈</span>Mission Planner</button>
+          <button class="nav-item" type="button" data-view="ai-help" data-title="AI Help" data-copy="Get clear explanations of Mars terrain, route results, and mission data." aria-current="false"><span class="nav-icon">✧</span>AI Help</button>
+          <button class="nav-item" type="button" data-view="ar-engine" data-title="3D / AR Engine" data-copy="Explore the Mars globe now; Unreal Engine, phone AR, and controller support are planned." aria-current="false"><span class="nav-icon">◉</span>3D / AR Engine</button>
+        </nav>
+        <div class="sidebar-caption active-region-caption" id="active-region-caption">ACTIVE REGION</div>
+        <div class="active-region-card" aria-live="polite">
+          <span class="status-dot"></span>
+          <span><strong id="active-region-name">Gale Crater</strong><small id="active-region-coords">5.40 S / 137.80 E</small></span>
+        </div>
+        <div class="sidebar-bottom"><span class="status-dot"></span><span><strong>Mars surface workspace</strong><small>Explore · plan · visualize</small></span></div>
+      </aside>
+      <main class="app-main">
+        <div class="workspace-toolbar">
+          <button id="sidebar-toggle" class="sidebar-toggle" type="button" aria-label="Close sidebar" aria-controls="main-sidebar" aria-expanded="true" title="Close sidebar"><span aria-hidden="true">☰</span></button>
+          <div class="toolbar-heading">
+            <span class="toolbar-kicker" id="view-kicker">01 / EXPLORE</span>
+            <h1 id="view-title">Choose a region. Read the ground.</h1>
+          </div>
+          <span class="toolbar-caption">MARS SURFACE WORKSPACE</span>
+        </div>
+<div class="container workspace-layout" id="workspace-layout" data-view="explore">
+      <!-- Region catalog: globe, search, featured field sites, full gazetteer -->
+      <aside class="box catalog-column" id="mars-3d-box" aria-label="Region catalog">
+        <div class="catalog-head">
+          <div class="section-kicker">REGION CATALOG</div>
+          <h2>Explore Mars</h2>
+          <p class="location-count" id="location-count">Loading gazetteer…</p>
+        </div>
+        <div class="globe-stage" id="globe-stage">
+          <canvas id="mars-scene" aria-label="Interactive Mars globe. Click a point to select it."></canvas>
+          <div id="labels-3d-layer"></div>
+        </div>
+        <div class="region-sidebar">
+          <input id="location-search" class="location-search" type="search" placeholder="Search region or landing site" aria-label="Search all Mars locations" autocomplete="off" />
+          <div class="catalog-scroll">
+            <div class="catalog-group-title" id="featured-title">FEATURED FIELD SITES</div>
+            <div id="featured-sites" class="featured-sites" role="list" aria-labelledby="featured-title"></div>
+            <div class="catalog-group-row">
+              <span class="catalog-group-title" id="all-features-title">ALL NAMED FEATURES</span>
+              <select id="feature-type-filter" class="feature-type-filter" aria-label="Filter features by type"><option value="">All types</option></select>
+            </div>
+            <div id="region-list-container" class="location-list" role="listbox" aria-labelledby="all-features-title">
+              <p class="location-empty">Loading locations…</p>
+            </div>
+            <p class="location-source">Names: <a href="https://planetarynames.wr.usgs.gov/" target="_blank" rel="noreferrer">USGS / IAU Gazetteer</a></p>
+          </div>
+        </div>
+      </aside>
+
+      <!-- 2D surface map -->
+      <div class="box" id="mars-2d-box">
+        <div class="hud-top" role="group" aria-label="Selection summary">
+          <div class="hud-cell">
+            <div class="hud-subtitle">MARS SURFACE ATLAS / DATA EXPLORER</div>
+            <div id="region-title">Gale Crater — Curiosity Landing Site</div>
+          </div>
+          <div class="hud-cell">
+            <div class="hud-subtitle">SELECTED COORDINATE</div>
+            <div id="coord-readout">5.400 S / 137.800 E</div>
+          </div>
+          <div class="hud-cell hud-status">
+            <span class="status-dot" id="point-status-dot"></span>
+            <div>
+              <strong id="point-status" class="point-status">Choose a point on the map</strong>
+              <small id="point-status-detail">Terrain, geology and climate records</small>
+            </div>
+          </div>
+        </div>
+
+        <div id="mars-2d-map"></div>
+
+        <!-- Route view HUD -->
+        <div class="route-hud-top" id="route-hud-top">
+          <div class="route-hud-heading">
+            <div class="hud-subtitle" id="route-hud-kicker">MARS / ROUTE WORKSPACE</div>
+            <div class="route-hud-title" id="route-hud-title">Set a start and destination</div>
+          </div>
+          <span class="route-status-pill" id="route-status-pill" data-state="draft" role="status"><i aria-hidden="true"></i><span id="route-status-text">DRAFT</span></span>
+        </div>
+        <div class="route-hud-bottom" id="route-hud-bottom">
+          <div class="route-hud-endpoints">
+            <span class="route-hud-point"><i class="endpoint-dot start-dot"></i><small>START</small><strong id="route-hud-start">Not set</strong></span>
+            <span class="route-hud-line" aria-hidden="true"></span>
+            <span class="route-hud-point"><i class="endpoint-dot end-dot"></i><small>DESTINATION</small><strong id="route-hud-end">Not set</strong></span>
+          </div>
+          <strong class="route-hud-metric" id="route-hud-metric">No route yet</strong>
+        </div>
+        <section class="route-region-search" id="route-region-search" aria-label="Choose a region">
+          <div class="route-region-head">
+            <span class="hud-subtitle" id="route-region-label">CHOOSE REGION</span>
+            <button type="button" class="route-region-toggle" id="route-region-toggle" aria-expanded="true" aria-controls="route-region-body" aria-label="Collapse region search">−</button>
+          </div>
+          <div class="route-region-body" id="route-region-body">
+            <input id="route-region-input" class="route-region-input" type="search" placeholder="Search region or landing site" aria-label="Search a Mars region or landing site" aria-controls="route-region-results" autocomplete="off" />
+            <div class="route-region-results" id="route-region-results" role="listbox" aria-labelledby="route-region-label"></div>
+            <p class="route-region-note" id="route-region-note">Pick a region to fly there, then click the map to set endpoints.</p>
+          </div>
+        </section>
+        <div class="cursor-readout" id="cursor-readout" aria-hidden="true">—</div>
+
+        <div class="hud-bottom">
+          <div class="layers-summary">
+            <span class="hud-subtitle">VISIBLE LAYERS</span>
+            <div class="layer-chips" id="layer-chips"></div>
+          </div>
+          <div class="hud-bottom-actions">
+            <span id="zoom-label" class="zoom-label">Z 10</span>
+            <button id="layer-manager-toggle" class="layer-manager-toggle" type="button" aria-expanded="false" aria-controls="layer-manager">Manage layers +</button>
+          </div>
+          <div class="layer-manager" id="layer-manager" hidden>
+            <label class="layer-field">Base map / overlay
+              <select id="layer-select">
+                <option value="HIRISE_AUTO">HiRISE where available · CTX fallback · warm display</option>
+                <option value="CTX_WARM">CTX image · warm display</option>
+                <option value="CTX_RAW">CTX image · raw display</option>
+                <option value="THEMIS_IR">THEMIS day infrared · image</option>
+                <option value="MOLA_CLR">MOLA color hillshade · image</option>
+                <option value="TES_THERMAL">TES thermal inertia · map overlay</option>
+                <option value="TES_DUST">TES dust cover index · map overlay</option>
+                <option value="TES_CLAY">TES sheet silicates · map overlay</option>
+                <option value="MOLA_ROUGHNESS">MOLA roughness · map overlay</option>
+                <option value="VIKING">Viking global mosaic · image</option>
+              </select>
+            </label>
+            <label class="layer-check"><input id="feature-labels-toggle" type="checkbox" checked /> Named feature labels</label>
+            <small id="map-source-note">HiRISE imagery appears only inside its footprints; elsewhere CTX fills in.</small>
+          </div>
+        </div>
+      </div>
+
+      <!-- Selected location details -->
+      <aside class="box explore-info" id="explore-info" aria-label="Selected location details" aria-live="polite">
+        <div class="info-head">
+          <div class="section-kicker" id="info-kicker">SELECTED LOCATION</div>
+          <h2 id="info-title">Gale Crater</h2>
+          <div class="info-tags" id="info-tags"></div>
+          <p class="info-coords" id="info-coords">5.4000° S · 137.8000° E</p>
+          <p class="info-context" id="info-context"></p>
+        </div>
+        <div class="info-scroll">
+          <section id="info-mission" class="info-mission" hidden></section>
+          <div class="info-glance" id="info-glance"></div>
+          <div class="place-briefing" id="place-briefing" hidden>
+            <div class="place-briefing-head">
+              <span class="section-kicker">RUBY'S BRIEFING</span>
+              <button type="button" class="info-action" id="place-briefing-play">Explain this place</button>
+            </div>
+            <p class="place-briefing-text" id="place-briefing-text"></p>
+            <div class="place-briefing-topics" id="place-briefing-topics"></div>
+            <small class="place-briefing-status" id="place-briefing-status" role="status" aria-live="polite"></small>
+          </div>
+          <div id="info-sections" class="info-sections"></div>
+          <div class="info-actions">
+            <button type="button" class="info-action" id="info-copy">Copy coordinates</button>
+            <button type="button" class="info-action" id="info-route-start">Use as route start</button>
+            <button type="button" class="info-action" id="info-route-end">Use as destination</button>
+            <a class="info-action" id="info-open-3d" href="./jezero-3d.html" hidden>Walk Jezero in 3D ↗</a>
+          </div>
+        </div>
+      </aside>
+      <section class="route-panel" id="route-panel" hidden aria-label="Route builder">
+        <div class="route-panel-head">
+          <div class="section-kicker">ROUTE BUILDER</div>
+          <h2>Set your traverse</h2>
+          <p class="route-intro">Click the map to drop a start, then a destination. You can also search a named place or type coordinates.</p>
+        </div>
+        <datalist id="route-place-options"></datalist>
+
+        <div class="route-endpoint" data-endpoint-card="start">
+          <div class="endpoint-heading"><span class="endpoint-dot start-dot"></span><span class="endpoint-kicker">START POINT</span><button class="endpoint-pick" type="button" data-route-pick="start">Pick on map</button></div>
+          <div class="endpoint-main"><strong id="start-name">Not set</strong><span id="start-coordinate-label">—</span></div>
+          <details class="endpoint-edit">
+            <summary>Search or enter coordinates</summary>
+            <input class="endpoint-search" id="route-start-search" type="search" list="route-place-options" placeholder="Search a named place" autocomplete="off" aria-label="Search a named place for the start point" />
+            <div class="coordinate-inputs"><label>Latitude °<input id="route-start-lat" type="number" min="-90" max="90" step="0.0001" placeholder="18.44"></label><label>Longitude °<input id="route-start-lon" type="number" min="-180" max="180" step="0.0001" placeholder="77.45"></label></div>
+          </details>
+        </div>
+
+        <div class="route-endpoint" data-endpoint-card="end">
+          <div class="endpoint-heading"><span class="endpoint-dot end-dot"></span><span class="endpoint-kicker">DESTINATION</span><button class="endpoint-pick" type="button" data-route-pick="end">Pick on map</button></div>
+          <div class="endpoint-main"><strong id="end-name">Not set</strong><span id="end-coordinate-label">—</span></div>
+          <details class="endpoint-edit">
+            <summary>Search or enter coordinates</summary>
+            <input class="endpoint-search" id="route-end-search" type="search" list="route-place-options" placeholder="Search a named place" autocomplete="off" aria-label="Search a named place for the destination" />
+            <div class="coordinate-inputs"><label>Latitude °<input id="route-end-lat" type="number" min="-90" max="90" step="0.0001" placeholder="18.47"></label><label>Longitude °<input id="route-end-lon" type="number" min="-180" max="180" step="0.0001" placeholder="77.40"></label></div>
+          </details>
+        </div>
+
+        <div class="route-section-label" id="route-priority-label">ROUTE PRIORITY</div>
+        <div class="route-priority" role="radiogroup" aria-labelledby="route-priority-label">
+          <label><input type="radio" name="route-mode" value="safest" /><span>Safest</span></label>
+          <label><input type="radio" name="route-mode" value="balanced" checked /><span>Balanced</span></label>
+          <label><input type="radio" name="route-mode" value="fastest" /><span>Fast</span></label>
+        </div>
+        <p class="route-priority-note" id="route-priority-note">Slope limit 20° · moderate terrain-risk weight</p>
+        <select id="route-mode-select" hidden aria-hidden="true" tabindex="-1"><option value="balanced" selected>Balanced</option><option value="safest">Safest</option><option value="fastest">Fastest</option></select>
+
+        <div class="route-section-label">CANDIDATE SUMMARY</div>
+        <div class="route-summary" id="route-summary">
+          <div class="route-summary-row"><span>Distance</span><strong id="route-sum-distance">—</strong></div>
+          <div class="route-summary-row"><span>Maximum slope</span><strong id="route-sum-slope">—</strong></div>
+          <div class="route-summary-row"><span>Mean slope</span><strong id="route-sum-mean-slope">—</strong></div>
+          <div class="route-summary-row"><span>Estimated traverse</span><strong id="route-sum-time">—</strong></div>
+          <div class="route-summary-row"><span>Terrain mix</span><strong id="route-sum-terrain">—</strong></div>
+          <div class="route-terrain-bar" id="route-terrain-bar" aria-hidden="true"></div>
+          <div class="route-summary-row is-highlight"><span>Named features nearby</span><strong id="route-sum-features">—</strong></div>
+        </div>
+        <p class="route-warning" id="route-warning" role="alert" hidden></p>
+        <p class="route-summary-note" id="route-summary-note">Traverse time uses the Mission Planner speed and driving-hours inputs.</p>
+        <p id="terrain-class-summary" class="terrain-class-summary" hidden>Route class counts appear after planning.</p>
+
+        <button id="route-plan-button" class="route-cta" type="button" disabled>Calculate route</button>
+        <button id="route-to-mission" class="route-secondary" type="button" disabled>Send to Mission Planner →</button>
+        <button id="route-explain-button" class="route-secondary" type="button" disabled>Ask Ruby to explain this route</button>
+        <div class="route-briefing" id="route-briefing" hidden>
+          <p class="route-briefing-text" id="route-briefing-text"></p>
+          <div class="route-briefing-actions">
+            <button id="route-briefing-more" class="global-map-button" type="button" hidden>Tell me more</button>
+            <small class="route-briefing-status" id="route-briefing-status" role="status" aria-live="polite"></small>
+          </div>
+        </div>
+        <p class="route-hint" id="route-hint">Choose a start and destination to begin.</p>
+
+        <details class="route-advanced">
+          <summary>Options and legend</summary>
+          <label class="vision-toggle" for="route-vision-toggle"><input id="route-vision-toggle" type="checkbox"><span><strong>Experimental Jezero image + terrain layer</strong><small>Opt-in · strongest supported 25% soft cost · weak-label prototype</small></span></label>
+          <div class="route-advanced-actions"><button id="show-global-map" class="global-map-button" type="button">Show whole Mars</button><button id="clear-route-button" class="global-map-button" type="button">Clear endpoints</button></div>
+          <div class="route-legend" aria-label="Route segment colours">
+            <span><i class="terrain-swatch swatch-safe"></i>Safe · cost &lt; 0.33</span>
+            <span><i class="terrain-swatch swatch-caution"></i>Caution · 0.33–0.67</span>
+            <span><i class="terrain-swatch swatch-high"></i>High · ≥ 0.67</span>
+            <span><i class="terrain-swatch swatch-unknown"></i>Unknown · incomplete DEM</span>
+          </div>
+          <p class="legend-note">Impassable cells (mapped dunes, crater zones, or slopes over the priority limit) are avoided. Bands are planning thresholds, not rover-certified limits.</p>
+        </details>
+      </section>
+      <section class="section-card mission-card" id="mission-panel" hidden>
+        <div class="section-kicker">MISSION WORKSPACE</div><h2>Mission Planner</h2>
+        <p>Set endpoints and rover limits. MarsWalk runs safest, balanced, and fastest terrain routes, then estimates schedule and resource budgets from the assumptions below.</p>
+        <div class="mission-endpoints">
+          <div class="mission-endpoint"><strong>START</strong><div class="coordinate-inputs"><label>Latitude °<input id="mission-start-lat" type="number" min="-90" max="90" step="0.0001" placeholder="-5.40"></label><label>Longitude °<input id="mission-start-lon" type="number" min="-180" max="180" step="0.0001" placeholder="137.80"></label></div><button class="endpoint-pick" type="button" data-route-pick="start">Pick start on map</button></div>
+          <div class="mission-endpoint"><strong>DESTINATION</strong><div class="coordinate-inputs"><label>Latitude °<input id="mission-end-lat" type="number" min="-90" max="90" step="0.0001" placeholder="18.44"></label><label>Longitude °<input id="mission-end-lon" type="number" min="-180" max="180" step="0.0001" placeholder="77.45"></label></div><button class="endpoint-pick" type="button" data-route-pick="end">Pick destination on map</button></div>
+        </div>
+        <div class="mission-form-grid">
+          <label>Vehicle profile<select id="mission-profile"><option value="robotic">Robotic rover</option><option value="crewed">Crewed rover (planning proxy)</option></select></label>
+          <label>Route priority<select id="mission-priority"><option value="balanced">Balanced</option><option value="safest">Safest</option><option value="fastest">Fastest</option></select></label>
+          <label>Maximum slope °<input id="mission-max-slope" type="number" min="1" max="45" step="0.5" value="20"></label>
+          <label>Mission time limit (sols)<input id="mission-max-sols" type="number" min="0.1" max="1000" step="0.1" value="30"></label>
+          <label>Maximum traverse distance (km)<input id="mission-max-distance" type="number" min="0.1" max="100000" step="1" value="100"></label>
+          <label>Average driving speed (km/h)<input id="mission-speed" type="number" min="0.01" max="20" step="0.01" value="0.15"></label>
+          <label>Driving hours per sol<input id="mission-driving-hours" type="number" min="0.1" max="24" step="0.5" value="4"></label>
+          <label>Usable energy budget (kWh)<input id="mission-energy-budget" type="number" min="0" step="0.1" value="100"></label>
+          <label>Energy use (kWh/km)<input id="mission-energy-rate" type="number" min="0" step="0.01" value="1"></label>
+          <label>Energy reserve (%)<input id="mission-energy-reserve" type="number" min="0" max="95" step="1" value="20"></label>
+          <label>Roughness review limit (m RMS)<input id="mission-roughness-limit" type="number" min="0" step="0.1" value="5"></label>
+          <label class="crew-only" hidden>Crew size<input id="mission-crew-size" type="number" min="1" max="20" step="1" value="2"></label>
+          <label class="crew-only" hidden>O₂ supply (kg)<input id="mission-oxygen-budget" type="number" min="0" step="0.1" value="100"></label>
+          <label class="crew-only" hidden>O₂ assumption (kg/person/sol)<input id="mission-oxygen-rate" type="number" min="0" step="0.01" value="0.84"></label>
+        </div>
+        <label class="mission-vision-toggle"><input id="mission-use-vision" type="checkbox"><span><strong>Include experimental Jezero vision cost</strong><small>Optional 25% soft cost; weak-label model, not a validated hazard map.</small></span></label>
+        <div class="mission-actions"><button id="mission-plan-button" class="card-action" type="button">Compare routes & plan mission</button><button id="mission-clear-button" class="global-map-button" type="button">Clear endpoints and results</button></div>
+        <div id="mission-status" class="mission-status" role="status" aria-live="polite">Choose a start and destination on the map or enter coordinates.</div>
+        <section id="mission-results" class="mission-results" hidden aria-live="polite">
+          <div class="mission-result-heading"><div><div class="section-kicker">ROUTE OPTIONS</div><h3>Mission feasibility</h3></div><div class="mission-report-actions"><button id="mission-download-report" type="button" disabled>Download JSON</button><button id="mission-print-report" type="button">Print</button></div></div>
+          <div id="mission-option-list" class="mission-option-list"></div>
+          <div id="mission-selected-summary" class="mission-selected-summary"></div>
+          <div id="mission-warnings" class="mission-warnings"></div>
+          <div class="mission-method-note"><strong>What these numbers mean</strong><p>Route shape, terrain metrics, and route-cell classes come from the A* terrain planner. Time = distance ÷ entered average speed ÷ entered drive hours per sol. Energy = distance × entered energy use per km. Crew oxygen uses the editable per-person-per-sol assumption. These are planning estimates, not rover telemetry or certified life-support predictions. Radiation, slip, power variation, and detailed day/night operations are not modeled.</p></div>
+        </section>
+        <details class="mission-audit"><summary>Audit a custom traverse</summary><p>Paste a GeoJSON LineString or a list of [longitude, latitude] points. We sample up to 20 points from the global MDEM point service, then report sampled slope and local elevation variation. This is a coarse screening aid, not a high-resolution DTM hazard audit.</p><textarea id="mission-custom-route" rows="4" placeholder='{"type":"LineString","coordinates":[[137.80,-5.40],[137.90,-5.35]]}'></textarea><button id="mission-audit-button" class="card-action" type="button">Audit custom traverse</button><div id="mission-audit-result" class="mission-audit-result" role="status"></div></details>
+      </section>
+      <section class="section-card assistant-card" id="assistant-panel" data-ruby-chat="true" hidden aria-label="Ruby — Mars AI assistant">
+        <!-- Ruby's inline chat. The floating button is hidden while this view
+             is active; the panel itself is the chat container (#ruby-chat). -->
+        <header class="ruby-chat-head ruby-inline-head">
+          <span class="ruby-chat-avatar" aria-hidden="true">
+            <img class="ruby-fab-img" src="./assets/ruby-mascot.webp" alt="" width="38" height="38" decoding="async" draggable="false" />
+            <svg class="ruby-gem" viewBox="0 0 48 48" aria-hidden="true" focusable="false"><path d="M14 8h20l9 12-19 21L5 20z" fill="currentColor" opacity=".25"/><path d="M14 8h20l9 12-19 21L5 20zM5 20h38M17 20l7 21 7-21M14 8l3 12M34 8l-3 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+          </span>
+          <div class="ruby-chat-titles">
+            <h2 id="ruby-chat-title">Ruby</h2>
+            <p class="ruby-chat-context" id="ruby-chat-context">Mars assistant</p>
+          </div>
+          <button type="button" class="ruby-icon-button" id="ruby-chat-voice" aria-pressed="false" aria-label="Speak Ruby's replies aloud" title="Speak replies">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 9.5v5h3.5L12 19V5L7.5 9.5H4z" fill="currentColor"/><path class="ruby-voice-waves" d="M15 9a4 4 0 0 1 0 6M17.5 6.5a8 8 0 0 1 0 11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          </button>
+          <button type="button" class="ruby-icon-button" id="ruby-chat-close" aria-label="Close Ruby" title="Close">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          </button>
+        </header>
+        <div class="ruby-chat-log" id="ruby-chat-log" role="log" aria-live="polite" aria-label="Conversation with Ruby"></div>
+        <div class="ruby-chat-chips" id="ruby-chat-chips" aria-label="Suggested questions"></div>
+        <form class="ruby-chat-form" id="ruby-chat-form" autocomplete="off">
+          <label class="ruby-visually-hidden" for="ruby-chat-input">Ask Ruby a question</label>
+          <input id="ruby-chat-input" type="text" maxlength="500" placeholder="Ask about this place or Mars…" enterkeyhint="send" />
+          <button type="button" class="ruby-icon-button" id="ruby-chat-mic" aria-pressed="false" aria-label="Ask by voice" title="Ask by voice" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          </button>
+          <button type="submit" class="ruby-send" id="ruby-chat-send">Send</button>
+        </form>
+        <p class="ruby-chat-note" id="ruby-chat-note">Click the mic to enable wake word listening, then say “Ruby” and your request. It stays on while this page is open.</p>
+      </section>
+      <section class="section-card ar-card" id="ar-panel" hidden>
+        <div class="section-kicker">3D / AR ENGINE</div><h2>Mars in 3D</h2>
+        <p>Explore a real Jezero region in the browser using its CTX surface image and stereo elevation data. Turn your phone to look around, then walk across the terrain with touch controls or a gamepad.</p>
+        <div class="engine-preview"><div class="engine-orbit"><span></span></div><div><strong>Jezero 3D terrain</strong><small>Regional CTX stereo DTM · warm surface view</small></div></div>
+        <a class="card-action vr-test-link" href="./jezero-3d.html">Open Jezero 3D browser view <span>↗</span></a>
+        <a class="card-action vr-test-link" href="./vr-test.html">Open simple head-tracking demo <span>↗</span></a>
+        <div class="engine-roadmap"><span>PROTOTYPE STATUS</span><p>Real image and elevation mesh for one Jezero footprint</p><p>Phone head tracking, split-screen viewer, touch and gamepad movement</p><p>Next: connect route/hazard overlays and add laptop-to-phone controls</p></div>
+        <button type="button" class="card-action" data-open-view="explore">Back to surface explorer <span>↗</span></button>
+      </section>
+        </div>
+      </main>
+    </div>
+
+    <script type="module" src="./js/ruby-assistant.js"></script>
+    <script type="module" src="./js/map.js"></script>
+  </body>
+</html>
