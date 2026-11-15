@@ -1,0 +1,34 @@
+{
+  "channel_names": [
+    "ctx_image_intensity",
+    "elevation_m",
+    "slope_deg",
+    "aspect_east_component",
+    "aspect_north_component",
+    "roughness_3x3_plane_rms_m",
+    "relief_3x3_range_m",
+    "valid_data_mask"
+  ],
+  "aspect_encoding": "sin/cos downslope azimuth",
+  "stack_name": "jezero_full_scene_features_20m.tif",
+  "ctx_image_intensity": [
+    0.3075472021102905,
+    0.8269463109970093
+  ],
+  "elevation_m": [
+    -2682.916796875,
+    -1584.471728515625
+  ],
+  "slope_deg": [
+    0.0,
+    45.0
+  ],
+  "roughness_3x3_plane_rms_m": [
+    0.027818523719906806,
+    0.4796208560466763
+  ],
+  "relief_3x3_range_m": [
+    0.52587890625,
+    21.065869140624997
+  ]
+}
